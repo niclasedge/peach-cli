@@ -94,16 +94,21 @@ Only shown when the [`task` CLI](https://github.com/niclasedge/cc-task)
 is installed on `PATH`; otherwise the panel is silently omitted.
 
 When present, it runs `task info --format json` in the project cwd and
-renders:
+renders the same sections as `task info` on the terminal:
 
-- Project name and group
-- Aggregate task counts (`done / total`, `in progress`, `pending`, `blocked`)
-- Per-phase breakdown
-- The next recommended task (top of `task next`)
+- Project name, group, and aggregate stats (`done / total`, `in
+  progress`, `in review`, `pending`, `blocked`)
+- **Termine** — tasks with due dates
+- **In Arbeit** — currently in-progress / in-review tasks
+- **Waiting** — tasks waiting on dependencies
+- **Next** — top-N recommended tasks from `task next`
+
+Task rows display as `{id}  {P}  {title}` with a color-coded priority
+letter (H/M/L).
 
 If `task` is installed but the current directory is not a tracked
 TaskMD project, the panel shows `No TaskMD project for this directory.`
-instead of stats.
+instead of the sections.
 
 ## Slash commands
 

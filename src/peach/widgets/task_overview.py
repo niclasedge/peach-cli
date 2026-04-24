@@ -4,9 +4,9 @@ Optional panel that surfaces the current project's TaskMD state via the
 `task` CLI (https://github.com/niclasedge/cc-task). Shown only when the
 `task` binary is on PATH; otherwise the panel is omitted entirely.
 
-Runs `task info --format json` as an async worker on mount, parses the
-JSON output, and renders project name, status/phase counts, and the
-next recommended task.
+Runs `task info --format json` as an async worker on mount and renders
+the same sections as `task info`: project header, stats, then Termine /
+In Arbeit / Waiting / Next task lists.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from textual import work
 from textual.app import ComposeResult
+from textual.content import Content
 from textual.containers import Vertical
 from textual.reactive import reactive
 from textual.widgets import Static
@@ -26,6 +27,37 @@ from textual.widgets import Static
 def task_cli_available() -> bool:
     """True if the `task` CLI from cc-task is installed on PATH."""
     return shutil.which("task") is not None
+
+
+_PRIO_CHAR = {"high": "H", "medium": "M", "low": "L"}
+_PRIO_COLOR = {
+    "high": "$text-error",
+    "medium": "$text-warning",
+    "low": "$text-primary",
+}
+_STATUS_ORDER = ("in-progress", "in-review", "pending", "blocked", "cancelled")
+_STATUS_LABEL = {
+    "in-progress": "in progress",
+    "in-review": "in review",
+    "pending": "pending",
+    "blocked": "blocked",
+    "cancelled": "cancelled",
+}
+
+
+def _task_row(task: dict) -> Content:
+    """One-line task row: `id  P  title` with colored prio letter."""
+    task_id = task.get("id") or task.get("task_id") or ""
+    title = task.get("title", "")
+    prio = task.get("priority") or ""
+    prio_char = _PRIO_CHAR.get(prio, " ")
+    prio_color = _PRIO_COLOR.get(prio, "$text-secondary")
+    return Content.from_markup(
+        f"[$text-secondary]$task_id[/]  [{prio_color}]$prio[/]  $title",
+        task_id=task_id,
+        prio=prio_char,
+        title=title,
+    )
 
 
 class TaskOverview(Vertical):
@@ -39,9 +71,13 @@ class TaskOverview(Vertical):
         .project { color: $text; text-style: bold; }
         .group { color: $text-secondary; }
         .stats { color: $text-secondary; }
-        .phase-row { color: $text-secondary; }
-        .next-label { color: $text-secondary; margin-top: 1; }
-        .next-task { color: $text; }
+        .section-header {
+            color: $text-secondary;
+            text-style: bold;
+            margin-top: 1;
+        }
+        .section-empty { color: $text-secondary; text-style: italic; }
+        .task-row { color: $text; }
     }
     """
 
@@ -65,8 +101,6 @@ class TaskOverview(Vertical):
         project = self.data.get("project") or {}
         stats = self.data.get("stats") or {}
         by_status = stats.get("by_status") or {}
-        by_phase = stats.get("by_phase") or {}
-        recommended = self.data.get("recommended")
 
         yield Static(
             project.get("name") or project.get("id") or "—",
@@ -77,28 +111,28 @@ class TaskOverview(Vertical):
 
         total = stats.get("total", 0)
         completed = by_status.get("completed", 0)
-        pending = by_status.get("pending", 0)
-        in_progress = by_status.get("in-progress", 0)
-        blocked = stats.get("blocked_count", 0)
-
         bits = [f"{completed}/{total} done"]
-        if in_progress:
-            bits.append(f"{in_progress} in progress")
-        if pending:
-            bits.append(f"{pending} pending")
-        if blocked:
-            bits.append(f"{blocked} blocked")
+        for key in _STATUS_ORDER:
+            if n := by_status.get(key, 0):
+                bits.append(f"{n} {_STATUS_LABEL[key]}")
+        blocked_count = stats.get("blocked_count", 0)
+        if blocked_count and not by_status.get("blocked"):
+            bits.append(f"{blocked_count} blocked")
         yield Static("  ·  ".join(bits), classes="stats")
 
-        for phase_id, count in by_phase.items():
-            slug = phase_id.split(":", 1)[-1]
-            yield Static(f"  {slug}: {count}", classes="phase-row")
-
-        if recommended:
-            yield Static("next:", classes="next-label")
-            task_id = recommended.get("task_id", "")
-            title = recommended.get("title", "")
-            yield Static(f"{task_id}  {title}", classes="next-task")
+        for section_key, label in (
+            ("termine", "Termine"),
+            ("in_arbeit", "In Arbeit"),
+            ("waiting", "Waiting"),
+            ("next", "Next"),
+        ):
+            items = self.data.get(section_key) or []
+            yield Static(f"{label} [{len(items)}]", classes="section-header")
+            if not items:
+                yield Static("(none)", classes="section-empty")
+                continue
+            for task in items:
+                yield Static(_task_row(task), classes="task-row")
 
     def on_mount(self) -> None:
         self._load_task_info()
