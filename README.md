@@ -87,6 +87,24 @@ can pick up where you left off.
   to end the current one, and `/peach:session-new` to branch off a new one
   in the same working directory.
 
+## Project overview (TaskMD integration)
+
+Optional sidebar panel that surfaces the current project's TaskMD state.
+Only shown when the [`task` CLI](https://github.com/niclasedge/cc-task)
+is installed on `PATH`; otherwise the panel is silently omitted.
+
+When present, it runs `task info --format json` in the project cwd and
+renders:
+
+- Project name and group
+- Aggregate task counts (`done / total`, `in progress`, `pending`, `blocked`)
+- Per-phase breakdown
+- The next recommended task (top of `task next`)
+
+If `task` is installed but the current directory is not a tracked
+TaskMD project, the panel shows `No TaskMD project for this directory.`
+instead of stats.
+
 ## Slash commands
 
 Type `/` in the prompt to open the command menu. Peach ships these built-ins:

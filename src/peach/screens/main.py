@@ -26,6 +26,7 @@ from peach.widgets.throbber import Throbber
 from peach.widgets.conversation import Conversation
 from peach.widgets.project_directory_tree import ProjectDirectoryTree
 from peach.widgets.side_bar import SideBar
+from peach.widgets.task_overview import TaskOverview, task_cli_available
 
 
 class ModeProvider(Provider):
@@ -140,9 +141,19 @@ class MainScreen(Screen, can_focus=False):
         with containers.Center():
             from peach.widgets.sessions_list import SessionsList
 
-            yield SideBar(
+            panels = [
                 SideBar.Panel("Sessions", SessionsList(), collapsed=False),
                 SideBar.Panel("Plan", Plan([]), collapsed=False),
+            ]
+            if task_cli_available():
+                panels.append(
+                    SideBar.Panel(
+                        "Project overview",
+                        TaskOverview(self.project_path, id="task_overview"),
+                        collapsed=False,
+                    )
+                )
+            panels.append(
                 SideBar.Panel(
                     "Project",
                     ProjectDirectoryTree(
@@ -151,8 +162,9 @@ class MainScreen(Screen, can_focus=False):
                     ),
                     flex=True,
                     collapsed=True,
-                ),
+                )
             )
+            yield SideBar(*panels)
             yield Conversation(
                 self.project_path,
                 self._agent,
