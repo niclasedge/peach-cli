@@ -6,11 +6,19 @@ session; `n` starts a new session in the current cwd; `d` deletes the
 highlighted session from the DB (after confirmation); `esc` quits.
 
 Result: "new" (str) to start a fresh session, or a Session dict to resume.
+
+Auto-refresh:
+- Subscribes to `session_update_signal` → instant refresh on in-app
+  rename / state change.
+- `set_interval(10)` → picks up cross-process DB changes (e.g. another
+  browser tab on the same `peach serve` instance deleted a session).
+- Cursor position is preserved across reloads by re-selecting the leaf
+  for the previously highlighted session id when it still exists.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from textual import getters, on, widgets, containers, work
 from textual.app import ComposeResult
@@ -19,9 +27,15 @@ from textual.screen import Screen
 
 from peach.db import DB, Session
 from peach.screens.confirm_modal import ConfirmModal
+from peach.widgets.sessions_list import _fmt_timestamp
+
+if TYPE_CHECKING:
+    from peach.app import ToadApp
+    from peach.session_tracker import SessionDetails
 
 EMPTY_MESSAGE = "No recent sessions. Press `n` or `enter` to start one."
 ACTIVE_MARKER = "● "
+REFRESH_INTERVAL_SECONDS = 10.0
 
 
 class StartupPickerScreen(Screen[Any]):
@@ -55,6 +69,15 @@ class StartupPickerScreen(Screen[Any]):
     async def on_mount(self) -> None:
         await self._db.create()
         await self._reload_tree()
+        signal = getattr(self.app, "session_update_signal", None)
+        if signal is not None:
+            signal.subscribe(self, self._on_session_update_signal)
+        self.set_interval(REFRESH_INTERVAL_SECONDS, self._reload_tree)
+
+    async def _on_session_update_signal(
+        self, update: "tuple[str, SessionDetails | None]"
+    ) -> None:
+        await self._reload_tree()
 
     def _active_db_ids(self) -> set[int]:
         """DB ids of sessions currently tracked in memory."""
@@ -65,8 +88,16 @@ class StartupPickerScreen(Screen[Any]):
             s.db_id for s in tracker.ordered_sessions if s.db_id is not None
         }
 
+    def _remembered_session_id(self) -> int | None:
+        """DB id of the currently highlighted session leaf, if any."""
+        node = self.tree.cursor_node
+        if node is None or not isinstance(node.data, dict):
+            return None
+        return node.data.get("id")
+
     async def _reload_tree(self) -> None:
         tree = self.tree
+        remembered = self._remembered_session_id()
         tree.clear()
         tree.root.expand()
         grouped = await self._db.sessions_recent(
@@ -77,15 +108,20 @@ class StartupPickerScreen(Screen[Any]):
             return
 
         active_ids = self._active_db_ids()
+        target_leaf = None
         for project_path, sessions in sorted(grouped.items()):
             label = project_path or "(no project)"
             project_node = tree.root.add(label, expand=True)
             for session in sessions:
                 title = session.get("title") or "(untitled)"
-                last_used = session.get("last_used") or ""
+                ts = _fmt_timestamp(session.get("last_used"))
                 prefix = ACTIVE_MARKER if session.get("id") in active_ids else ""
-                leaf_label = f"{prefix}{title} — {last_used}"
-                project_node.add_leaf(leaf_label, data=session)
+                leaf_label = f"{prefix}{title}  [dim]{ts}[/]" if ts else f"{prefix}{title}"
+                leaf = project_node.add_leaf(leaf_label, data=session)
+                if remembered is not None and session.get("id") == remembered:
+                    target_leaf = leaf
+        if target_leaf is not None:
+            tree.move_cursor(target_leaf)
 
     def _cursor_project_path(self) -> str:
         """Project path of the highlighted node. Falls back to cwd."""

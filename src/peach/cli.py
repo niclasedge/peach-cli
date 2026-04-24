@@ -5,6 +5,39 @@ from peach.app import ToadApp
 from peach.agent_schema import Agent
 
 
+def _resolve_public_url(
+    host: str, port: int, public_url: str | None
+) -> str | None:
+    """Derive a routable public URL when binding to a wildcard address.
+
+    textual-serve builds static + WebSocket URLs from its `public_url`,
+    which defaults to `http://{host}:{port}`. When the user binds to
+    `0.0.0.0` / `::` (to expose Peach on the LAN), that literal host
+    ends up in the client HTML — browsers can't resolve `0.0.0.0`, so
+    the WebSocket never connects and the TUI never streams.
+
+    If `--public-url` is set, honor it. Otherwise, for wildcard hosts,
+    detect the machine's primary LAN IP via the "UDP socket connect"
+    trick and return `http://<ip>:<port>`. For regular hosts, return
+    None so textual-serve uses its default.
+    """
+    if public_url:
+        return public_url
+    if host not in ("0.0.0.0", "::"):
+        return None
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+    return f"http://{ip}:{port}"
+
+
 def set_process_title(title: str) -> None:
     """Set the process title.
 
@@ -159,7 +192,7 @@ def run(
             host=host,
             port=port,
             title=serve_command,
-            public_url=public_url,
+            public_url=_resolve_public_url(host, port, public_url),
         )
         set_process_title("peach --serve")
         server.serve()
@@ -243,6 +276,7 @@ def acp(
             host=host,
             port=port,
             title=serve_command,
+            public_url=_resolve_public_url(host, port, None),
         )
         set_process_title("peach acp --serve")
         server.serve()
@@ -305,7 +339,11 @@ def serve(port: int, host: str, public_url: str | None = None) -> None:
     from textual_serve.server import Server
 
     server = Server(
-        sys.argv[0], host=host, port=port, title="Peach", public_url=public_url
+        sys.argv[0],
+        host=host,
+        port=port,
+        title="Peach",
+        public_url=_resolve_public_url(host, port, public_url),
     )
     set_process_title("peach serve")
     server.serve()
