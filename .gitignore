@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+__pycache__
+
+# Virtual environments
+.venv
+.DS_Store
+.vscode
+.zed
+.git
+.mypy_cache
+*.log
+
+uv.lock
+agent.jsonl
+replay.jsonl
+sandbox/
+
+# pytest-textual-snapshot artifacts
+snapshot_report.html
+.pytest_cache/
+
+# Local knowledge references (cloned sources for study, not shipped)
+knowledge/reference/
