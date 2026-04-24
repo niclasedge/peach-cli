@@ -5,8 +5,8 @@ Optional panel that surfaces the current project's TaskMD state via the
 `task` binary is on PATH; otherwise the panel is omitted entirely.
 
 Runs `task info --format json` as an async worker on mount and renders
-the same sections as `task info`: project header, stats, then Termine /
-In Arbeit / Waiting / Next task lists.
+the project header plus any non-empty Termine / In Arbeit / Waiting /
+Next task lists. Empty sections are omitted.
 """
 
 from __future__ import annotations
@@ -35,14 +35,6 @@ _PRIO_COLOR = {
     "medium": "$text-warning",
     "low": "$text-primary",
 }
-_STATUS_ORDER = ("in-progress", "in-review", "pending", "blocked", "cancelled")
-_STATUS_LABEL = {
-    "in-progress": "in progress",
-    "in-review": "in review",
-    "pending": "pending",
-    "blocked": "blocked",
-    "cancelled": "cancelled",
-}
 
 
 def _task_row(task: dict) -> Content:
@@ -70,13 +62,11 @@ class TaskOverview(Vertical):
         .-info { color: $text-secondary; text-style: italic; }
         .project { color: $text; text-style: bold; }
         .group { color: $text-secondary; }
-        .stats { color: $text-secondary; }
         .section-header {
             color: $text-secondary;
             text-style: bold;
             margin-top: 1;
         }
-        .section-empty { color: $text-secondary; text-style: italic; }
         .task-row { color: $text; }
     }
     """
@@ -99,8 +89,6 @@ class TaskOverview(Vertical):
             return
 
         project = self.data.get("project") or {}
-        stats = self.data.get("stats") or {}
-        by_status = stats.get("by_status") or {}
 
         yield Static(
             project.get("name") or project.get("id") or "—",
@@ -109,17 +97,6 @@ class TaskOverview(Vertical):
         if group := project.get("group_name"):
             yield Static(group, classes="group")
 
-        total = stats.get("total", 0)
-        completed = by_status.get("completed", 0)
-        bits = [f"{completed}/{total} done"]
-        for key in _STATUS_ORDER:
-            if n := by_status.get(key, 0):
-                bits.append(f"{n} {_STATUS_LABEL[key]}")
-        blocked_count = stats.get("blocked_count", 0)
-        if blocked_count and not by_status.get("blocked"):
-            bits.append(f"{blocked_count} blocked")
-        yield Static("  ·  ".join(bits), classes="stats")
-
         for section_key, label in (
             ("termine", "Termine"),
             ("in_arbeit", "In Arbeit"),
@@ -127,10 +104,9 @@ class TaskOverview(Vertical):
             ("next", "Next"),
         ):
             items = self.data.get(section_key) or []
-            yield Static(f"{label} [{len(items)}]", classes="section-header")
             if not items:
-                yield Static("(none)", classes="section-empty")
                 continue
+            yield Static(f"{label} [{len(items)}]", classes="section-header")
             for task in items:
                 yield Static(_task_row(task), classes="task-row")
 
