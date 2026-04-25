@@ -196,6 +196,11 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
                 yield Static(user_prompt or "—", classes="col-text", markup=False)
             with VerticalGroup(classes="col-agent"):
                 if not done and last_reply:
+                    # Busy AND a newer user prompt exists → the visible
+                    # reply is the answer to the *previous* turn. Keep
+                    # it on screen but spell that out, plus a "replying
+                    # to new prompt" indicator so the relationship
+                    # between the You / Agent columns is unambiguous.
                     with Horizontal(classes="col-label-row"):
                         yield Static("Agent", classes="col-label")
                         yield Static(
@@ -209,8 +214,11 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
                         "⏵ replying to new prompt…", classes="col-busy"
                     )
                 elif not done:
+                    # First-turn busy: the upcoming reply is the answer
+                    # to the prompt shown in the You column, so don't
+                    # add any "replying to new prompt" framing — the
+                    # busy state is already visible from the header pill.
                     yield Static("Agent", classes="col-label")
-                    yield Static("⏵ replying…", classes="col-busy")
                 else:
                     yield Static("Agent", classes="col-label")
                     yield Static(
