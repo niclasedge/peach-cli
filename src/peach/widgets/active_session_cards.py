@@ -130,10 +130,21 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
             height: 1;
         }
         .col-text { color: $text-secondary; height: auto; }
+        .col-prior-label {
+            color: $text-secondary;
+            text-style: dim italic;
+            height: 1;
+        }
+        .col-prior-text {
+            color: $text-secondary;
+            text-style: dim;
+            height: auto;
+        }
         .col-busy {
             color: $text-warning;
             text-style: italic;
             height: auto;
+            margin-top: 1;
         }
     }
     """
@@ -182,7 +193,19 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
             with VerticalGroup(classes="col-agent"):
                 yield Static("Agent", classes="col-label")
                 if not done:
-                    yield Static("⏵ replying…", classes="col-busy")
+                    if last_reply:
+                        yield Static(
+                            "↑ reply to previous prompt",
+                            classes="col-prior-label",
+                        )
+                        yield Static(
+                            last_reply,
+                            classes="col-prior-text",
+                            markup=False,
+                        )
+                    yield Static(
+                        "⏵ replying to new prompt…", classes="col-busy"
+                    )
                 else:
                     yield Static(last_reply or "—", classes="col-text", markup=False)
 
