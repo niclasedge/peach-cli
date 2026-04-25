@@ -151,13 +151,23 @@ class DB:
         return True
 
     async def session_set_last_user_prompt(self, id: int, prompt: str) -> bool:
-        """Persist a truncated copy of the latest user prompt for card preview."""
+        """Persist a truncated copy of the latest user prompt and bump
+        `last_used` so the picker shows fresh activity right away.
+
+        Atomic so the active-session card's age never lags behind the
+        prompt the user just sent.
+        """
         snippet = (prompt or "").strip()[:240]
+        now_utc = datetime.now(timezone.utc).isoformat()
         try:
             async with self.open() as db:
                 await db.execute(
-                    "UPDATE sessions SET last_user_prompt = ? WHERE id = ?",
-                    (snippet, id),
+                    """
+                    UPDATE sessions
+                       SET last_user_prompt = ?, last_used = ?
+                     WHERE id = ?
+                    """,
+                    (snippet, now_utc, id),
                 )
                 await db.commit()
         except aiosqlite.Error:
@@ -165,11 +175,12 @@ class DB:
         return True
 
     async def session_set_last_reply(self, id: int, reply: str) -> bool:
-        """Persist a truncated copy of the latest agent reply and stamp
-        `turn_ended_at` to mark the turn as completed.
+        """Persist a truncated copy of the latest agent reply, stamp
+        `turn_ended_at` to mark the turn as completed, and bump
+        `last_used` so the card stays fresh after the reply lands.
 
         Atomic so the picker can never see a reply without its turn-end
-        timestamp (or vice versa).
+        timestamp (or with stale activity).
         """
         snippet = (reply or "").strip()[:240]
         now_utc = datetime.now(timezone.utc).isoformat()
@@ -178,10 +189,10 @@ class DB:
                 await db.execute(
                     """
                     UPDATE sessions
-                       SET last_reply = ?, turn_ended_at = ?
+                       SET last_reply = ?, turn_ended_at = ?, last_used = ?
                      WHERE id = ?
                     """,
-                    (snippet, now_utc, id),
+                    (snippet, now_utc, now_utc, id),
                 )
                 await db.commit()
         except aiosqlite.Error:

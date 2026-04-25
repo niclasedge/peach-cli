@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 EMPTY_MESSAGE = "No recent sessions. Press `n` or `enter` to start one."
 ACTIVE_MARKER = "● "
-REFRESH_INTERVAL_SECONDS = 10.0
+REFRESH_INTERVAL_SECONDS = 5.0
 
 
 class StartupPickerScreen(Screen[Any]):
