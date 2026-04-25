@@ -75,13 +75,25 @@ def _labeled(label: str, text: str) -> Content:
 
 
 def _is_turn_done(session: Session) -> bool:
-    """True iff `turn_ended_at` is at-or-after `last_used` (i.e. the agent
-    has finished replying to the latest prompt)."""
-    ended = _seconds_since(session.get("turn_ended_at"))
-    used = _seconds_since(session.get("last_used"))
-    if ended is None:
+    """True iff a completed reply exists and is the answer to the latest
+    user prompt (i.e. the agent has finished replying).
+
+    Source-of-truth is `last_reply`: if a reply has been persisted, the
+    turn must have ended at some point. `turn_ended_at` only refines
+    that to "ended *for the current prompt*" — if it's missing
+    (pre-migration row, or a partial write) we still treat the session
+    as done so the card doesn't get stuck on "⏵ replying…" forever.
+    """
+    last_reply = (session.get("last_reply") or "").strip()
+    if not last_reply:
         return False
-    if used is None:
+    ended_at = session.get("turn_ended_at")
+    last_used_at = session.get("last_used")
+    if not ended_at or not last_used_at:
+        return True
+    ended = _seconds_since(ended_at)
+    used = _seconds_since(last_used_at)
+    if ended is None or used is None:
         return True
     # smaller seconds-since means newer; turn_end is newer than last_used → done
     return ended <= used
@@ -112,7 +124,7 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         height: auto;
         border: round $surface-lighten-1;
         padding: 0 1;
-        margin: 0 0 1 0;
+        margin: 0;
         background: $boost;
         border-title-align: left;
         border-title-color: $text;
