@@ -131,7 +131,8 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         border-title-style: bold;
 
         &.-active { border: round $success; }
-        &.-loaded { border: round $warning; }
+        &.-loaded-here { border: round $warning; }
+        &.-loaded-elsewhere { border: round $accent; }
         &:focus, &:focus-within {
             background: $boost-darken-1;
             border: round $primary;
@@ -162,10 +163,16 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
     }
     """
 
-    def __init__(self, session: Session, is_loaded: bool = False) -> None:
+    def __init__(
+        self,
+        session: Session,
+        is_loaded_here: bool = False,
+        is_loaded_elsewhere: bool = False,
+    ) -> None:
         super().__init__()
         self.session = session
-        self.is_loaded = is_loaded
+        self.is_loaded_here = is_loaded_here
+        self.is_loaded_elsewhere = is_loaded_elsewhere
 
     def compose(self) -> ComposeResult:
         path = self.session.get("project_path") or ""
@@ -175,11 +182,17 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         is_active = age < ACTIVE_THRESHOLD_SECONDS
         done = _is_turn_done(self.session)
 
-        # Border priority: loaded (orange) > active (green) > default.
-        # Orange = a tab for this session is open in the current process,
-        # so click jumps right back to it instead of resuming via ACP.
-        if self.is_loaded:
-            self.add_class("-loaded")
+        # Border priority:
+        #   loaded-here (orange)      — jump-back via switch_mode
+        #   loaded-elsewhere (accent) — already open in another process,
+        #                               clicking shows a notify instead of
+        #                               spawning a duplicate ACP load
+        #   active (green)            — recent activity, fresh resume
+        #   default                   — idle in cutoff range
+        if self.is_loaded_here:
+            self.add_class("-loaded-here")
+        elif self.is_loaded_elsewhere:
+            self.add_class("-loaded-elsewhere")
         elif done and is_active:
             self.add_class("-active")
 
@@ -261,8 +274,9 @@ class ActiveSessionCards(VerticalGroup):
     def __init__(self, id: str | None = None) -> None:
         super().__init__(id=id)
         # Set externally by the picker before assigning `sessions` so the
-        # resulting recompose can colour the right cards orange.
-        self.loaded_db_ids: set[int] = set()
+        # resulting recompose can colour the right cards.
+        self.loaded_here_db_ids: set[int] = set()
+        self.loaded_elsewhere_db_ids: set[int] = set()
 
     def watch_sessions(self, new: list[Session]) -> None:
         self.set_class(not new, "-empty")
@@ -272,7 +286,9 @@ class ActiveSessionCards(VerticalGroup):
             return
         yield Label("Active sessions", classes="section-header")
         for session in self.sessions:
+            sid = session.get("id")
             yield ActiveSessionCard(
                 session,
-                is_loaded=session.get("id") in self.loaded_db_ids,
+                is_loaded_here=sid in self.loaded_here_db_ids,
+                is_loaded_elsewhere=sid in self.loaded_elsewhere_db_ids,
             )

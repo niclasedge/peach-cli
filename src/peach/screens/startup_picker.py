@@ -18,6 +18,7 @@ Auto-refresh:
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from textual import getters, on, widgets, containers, work
@@ -109,7 +110,15 @@ class StartupPickerScreen(Screen[Any]):
         flat: list[Session] = []
         for sessions in grouped.values():
             flat.extend(sessions)
-        self.active_cards.loaded_db_ids = self._active_db_ids()
+        loaded_here = self._active_db_ids()
+        loaded_pks = await self._db.sessions_loaded_pks()
+        own_pid = os.getpid()
+        loaded_elsewhere = {
+            pk for pk, pid in loaded_pks.items()
+            if pk not in loaded_here and pid != own_pid
+        }
+        self.active_cards.loaded_here_db_ids = loaded_here
+        self.active_cards.loaded_elsewhere_db_ids = loaded_elsewhere
         self.active_cards.sessions = filter_active(flat)
         if not grouped:
             tree.root.add_leaf(EMPTY_MESSAGE)
@@ -204,4 +213,13 @@ class StartupPickerScreen(Screen[Any]):
     @on(ActiveSessionCards.Resume)
     def on_active_card_resume(self, event: ActiveSessionCards.Resume) -> None:
         event.stop()
+        sid = event.session.get("id")
+        if sid in self.active_cards.loaded_elsewhere_db_ids:
+            self.app.notify(
+                "Session is already open in another window or browser tab. "
+                "Switch there to continue.",
+                severity="warning",
+                title="Already loaded",
+            )
+            return
         self.dismiss(event.session)

@@ -112,6 +112,9 @@ class Agent(AgentBase):
         # Aggregates agent_message_chunk text per turn so we can persist a
         # snippet of the last completed reply for the active-sessions cards.
         self._reply_buffer: list[str] = []
+        # Periodic task that refreshes the DB live-heartbeat marker so
+        # other peach processes know this session is currently loaded.
+        self._heartbeat_task: asyncio.Task | None = None
 
         log_filename: str = generate_datetime_filename(f"{agent['name']}", ".txt")
         if log_path := os.environ.get("PEACH_LOG"):
@@ -181,7 +184,24 @@ class Agent(AgentBase):
             )
         except OSError:
             pass
+        if self.session_pk is not None:
+            with suppress(Exception):
+                await DB().session_set_live(self.session_pk, os.getpid())
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._agent_task = asyncio.create_task(self._run_agent())
+
+    async def _heartbeat_loop(self) -> None:
+        """Refresh the DB live-heartbeat every 30s while the agent runs."""
+        try:
+            while True:
+                await asyncio.sleep(30.0)
+                if self.session_pk is not None:
+                    with suppress(Exception):
+                        await DB().session_set_live(
+                            self.session_pk, os.getpid()
+                        )
+        except asyncio.CancelledError:
+            pass
 
     def send(self, request: jsonrpc.Request) -> None:
         """Send a request to the agent.
@@ -583,9 +603,25 @@ class Agent(AgentBase):
 
     async def stop(self) -> None:
         """Gracefully stop the process."""
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._heartbeat_task
+            self._heartbeat_task = None
+
         if self.session_pk is not None:
             db = DB()
+            # If we were mid-turn, persist whatever chunks we already
+            # received so the active-session card doesn't keep showing
+            # "⏵ replying…" forever after a forced shutdown.
+            if self._reply_buffer:
+                partial = "".join(self._reply_buffer) + " …[interrupted]"
+                with suppress(Exception):
+                    await db.session_set_last_reply(self.session_pk, partial)
+                self._reply_buffer.clear()
             await db.session_update_last_used(self.session_pk)
+            with suppress(Exception):
+                await db.session_clear_live(self.session_pk, os.getpid())
 
         if self._process is not None:
             try:

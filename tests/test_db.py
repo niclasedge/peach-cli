@@ -6,6 +6,7 @@ EXPECTED_COLUMNS = {
     "id", "agent", "agent_identity", "agent_session_id",
     "title", "protocol", "prompt_count", "created_at", "last_used", "meta_json",
     "project_path", "last_user_prompt", "last_reply", "turn_ended_at",
+    "live_pid", "live_heartbeat",
 }
 
 

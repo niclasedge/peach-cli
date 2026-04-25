@@ -23,6 +23,8 @@ class Session(TypedDict, total=False):
     last_user_prompt: str | None
     last_reply: str | None
     turn_ended_at: str | None
+    live_pid: int | None
+    live_heartbeat: str | None
 
 
 class DB:
@@ -58,6 +60,7 @@ class DB:
                 await db.commit()
                 await self._migrate_project_path(db)
                 await self._migrate_chat_preview(db)
+                await self._migrate_live_tracking(db)
         except aiosqlite.Error:
             return False
         return True
@@ -78,6 +81,23 @@ class DB:
               AND json_extract(meta_json, '$.cwd') IS NOT NULL
             """
         )
+        await db.commit()
+
+    async def _migrate_live_tracking(self, db: aiosqlite.Connection) -> None:
+        """Add live_pid + live_heartbeat columns for cross-process awareness.
+
+        live_pid identifies which OS process currently has the session
+        loaded; live_heartbeat is refreshed periodically so a stale row
+        (from a crashed process) becomes invisible after a cutoff.
+        """
+        cursor = await db.execute("PRAGMA table_info(sessions)")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if "live_pid" not in cols:
+            await db.execute("ALTER TABLE sessions ADD COLUMN live_pid INTEGER")
+        if "live_heartbeat" not in cols:
+            await db.execute(
+                "ALTER TABLE sessions ADD COLUMN live_heartbeat TIMESTAMP"
+            )
         await db.commit()
 
     async def _migrate_chat_preview(self, db: aiosqlite.Connection) -> None:
@@ -198,6 +218,72 @@ class DB:
         except aiosqlite.Error:
             return False
         return True
+
+    async def session_set_live(self, id: int, pid: int) -> bool:
+        """Mark session as currently loaded by `pid` and refresh heartbeat."""
+        now_utc = datetime.now(timezone.utc).isoformat()
+        try:
+            async with self.open() as db:
+                await db.execute(
+                    """
+                    UPDATE sessions
+                       SET live_pid = ?, live_heartbeat = ?
+                     WHERE id = ?
+                    """,
+                    (pid, now_utc, id),
+                )
+                await db.commit()
+        except aiosqlite.Error:
+            return False
+        return True
+
+    async def session_clear_live(self, id: int, pid: int) -> bool:
+        """Clear the live marker only when our pid still owns it.
+
+        Guards against another process having taken over the slot — we
+        don't want a graceful shutdown of process A to wipe the marker
+        process B just stamped.
+        """
+        try:
+            async with self.open() as db:
+                await db.execute(
+                    """
+                    UPDATE sessions
+                       SET live_pid = NULL, live_heartbeat = NULL
+                     WHERE id = ? AND live_pid = ?
+                    """,
+                    (id, pid),
+                )
+                await db.commit()
+        except aiosqlite.Error:
+            return False
+        return True
+
+    async def sessions_loaded_pks(
+        self, max_age_seconds: int = 60
+    ) -> dict[int, int]:
+        """Return `{session_id: live_pid}` for sessions with fresh heartbeats."""
+        from datetime import timedelta
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        ).isoformat()
+        try:
+            async with self.open() as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    """
+                    SELECT id, live_pid FROM sessions
+                     WHERE live_pid IS NOT NULL
+                       AND live_heartbeat IS NOT NULL
+                       AND live_heartbeat > ?
+                    """,
+                    (cutoff,),
+                )
+                rows = await cursor.fetchall()
+        except aiosqlite.Error:
+            return {}
+        return {int(r["id"]): int(r["live_pid"]) for r in rows}
 
     async def session_update_title(self, id: int, title: str) -> bool:
         """Update the last used timestamp.

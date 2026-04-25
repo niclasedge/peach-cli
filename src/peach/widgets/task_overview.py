@@ -97,6 +97,7 @@ class TaskOverview(Vertical):
         if group := project.get("group_name"):
             yield Static(group, classes="group")
 
+        seen_ids: set[str] = set()
         for section_key, label in (
             ("termine", "Termine"),
             ("in_arbeit", "In Arbeit"),
@@ -104,10 +105,18 @@ class TaskOverview(Vertical):
             ("next", "Next"),
         ):
             items = self.data.get(section_key) or []
-            if not items:
-                continue
-            yield Static(f"{label} [{len(items)}]", classes="section-header")
+            deduped = []
             for task in items:
+                tid = task.get("id") or task.get("task_id")
+                if tid and tid in seen_ids:
+                    continue
+                if tid:
+                    seen_ids.add(tid)
+                deduped.append(task)
+            if not deduped:
+                continue
+            yield Static(f"{label} [{len(deduped)}]", classes="section-header")
+            for task in deduped:
                 yield Static(_task_row(task), classes="task-row")
 
     def on_mount(self) -> None:
