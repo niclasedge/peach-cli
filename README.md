@@ -53,6 +53,17 @@ state directory listed above.
 - `PEACH_CWD` — override cwd passed to the ACP subprocess.
 - `PEACH_ACP_INITIALIZE` — set to `0` to skip ACP handshake (replay mode).
 
+### Web UI (`peach serve`)
+
+```
+peach serve -H 0.0.0.0 -p 8822
+```
+
+Binds to all interfaces. The public URL embedded in the served HTML
+(WebSocket + static asset URLs) is auto-derived from the machine's
+primary LAN IP so remote browsers can connect. Pass `--public-url
+https://example.com` to override (e.g. behind a reverse proxy).
+
 ## Sessions
 
 Every conversation is a *session*. Peach persists them automatically so you
@@ -74,7 +85,19 @@ can pick up where you left off.
 - **Startup picker** — launching `peach` without args shows recent sessions
   grouped by project path. `Enter` resumes the highlighted one (reloads the
   ACP context via `loadSession`); `n` starts a fresh session in the current
-  directory; `Esc` quits.
+  directory; `d` deletes a session row after confirmation; `Esc` quits.
+- **Active-session cards** — above the picker tree, full-width cards show
+  the latest *You* prompt (left) and *Agent* reply (right) for sessions
+  whose `last_used` is within the last 10 minutes. Cards show a green
+  border when the turn is finished and `last_used < 60s`, a yellow
+  border with `⏵ replying…` when the agent is mid-turn, and a grey
+  border when the session is idle. Click or `Enter` on a card to
+  resume — if the session is already loaded as a mode in this process,
+  Peach switches to it instead of spawning a duplicate.
+- **Auto-resume** — when exactly one session has `last_used < 60s` at
+  startup (typical hand-off case from another device), Peach skips the
+  picker and resumes that session directly. `Ctrl+H` always returns to
+  the picker.
 - **Sidebar panel** — `Ctrl+B` opens the sidebar; the top panel *Sessions*
   lists recent conversations of the current project with a compact timestamp
   (`HH:MM` today, `dd.mm. HH:MM` otherwise). `Enter` on a leaf resumes that
@@ -166,8 +189,9 @@ keep typing after `/` to filter.
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Resume the highlighted session |
+| `Enter` | Resume the highlighted session (or click an active card) |
 | `n` | Start a new session in the current directory |
+| `d` | Delete the highlighted session (with confirmation) |
 | `Esc` | Quit |
 
 ## Development

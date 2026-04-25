@@ -109,6 +109,9 @@ class Agent(AgentBase):
         self._message_target: MessagePump | None = None
 
         self._terminal_count: int = 0
+        # Aggregates agent_message_chunk text per turn so we can persist a
+        # snippet of the last completed reply for the active-sessions cards.
+        self._reply_buffer: list[str] = []
 
         log_filename: str = generate_datetime_filename(f"{agent['name']}", ".txt")
         if log_path := os.environ.get("PEACH_LOG"):
@@ -243,6 +246,7 @@ class Agent(AgentBase):
                 "content": {"type": type, "text": text},
             }:
                 if text:
+                    self._reply_buffer.append(text)
                     self.post_message(messages.Update(type, text))
 
             case {
@@ -641,7 +645,17 @@ class Agent(AgentBase):
         prompt_content_blocks = await asyncio.to_thread(
             build_prompt, self.project_root_path, prompt
         )
-        return await self.acp_session_prompt(prompt_content_blocks)
+        if self.session_pk is not None and prompt:
+            with suppress(Exception):
+                await DB().session_set_last_user_prompt(self.session_pk, prompt)
+        self._reply_buffer.clear()
+        stop_reason = await self.acp_session_prompt(prompt_content_blocks)
+        if self.session_pk is not None and self._reply_buffer:
+            reply = "".join(self._reply_buffer)
+            with suppress(Exception):
+                await DB().session_set_last_reply(self.session_pk, reply)
+            self._reply_buffer.clear()
+        return stop_reason
 
     async def acp_initialize(self):
         """Initialize agent."""

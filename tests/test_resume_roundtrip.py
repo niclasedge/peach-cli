@@ -101,6 +101,9 @@ async def test_app_bootstrap_invokes_launch_agent_on_resume(tmp_path, monkeypatc
     class _CapturedApp(ToadApp):
         CSS_PATH = str(peach_dir / "peach.tcss")
 
+        async def _try_auto_resume(self) -> bool:  # type: ignore[override]
+            return False
+
         def launch_agent(self, agent_identity, **kwargs):
             launch_calls.append({"agent_identity": agent_identity, **kwargs})
             self.exit()

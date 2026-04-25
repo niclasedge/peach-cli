@@ -20,6 +20,9 @@ class Session(TypedDict, total=False):
     last_used: str
     meta_json: str
     project_path: str | None
+    last_user_prompt: str | None
+    last_reply: str | None
+    turn_ended_at: str | None
 
 
 class DB:
@@ -54,6 +57,7 @@ class DB:
                 )
                 await db.commit()
                 await self._migrate_project_path(db)
+                await self._migrate_chat_preview(db)
         except aiosqlite.Error:
             return False
         return True
@@ -74,6 +78,22 @@ class DB:
               AND json_extract(meta_json, '$.cwd') IS NOT NULL
             """
         )
+        await db.commit()
+
+    async def _migrate_chat_preview(self, db: aiosqlite.Connection) -> None:
+        """Add last_user_prompt / last_reply / turn_ended_at columns."""
+        cursor = await db.execute("PRAGMA table_info(sessions)")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if "last_user_prompt" not in cols:
+            await db.execute(
+                "ALTER TABLE sessions ADD COLUMN last_user_prompt TEXT"
+            )
+        if "last_reply" not in cols:
+            await db.execute("ALTER TABLE sessions ADD COLUMN last_reply TEXT")
+        if "turn_ended_at" not in cols:
+            await db.execute(
+                "ALTER TABLE sessions ADD COLUMN turn_ended_at TIMESTAMP"
+            )
         await db.commit()
 
     async def session_new(
@@ -124,6 +144,44 @@ class DB:
                         now_utc.isoformat(),
                         id,
                     ),
+                )
+                await db.commit()
+        except aiosqlite.Error:
+            return False
+        return True
+
+    async def session_set_last_user_prompt(self, id: int, prompt: str) -> bool:
+        """Persist a truncated copy of the latest user prompt for card preview."""
+        snippet = (prompt or "").strip()[:240]
+        try:
+            async with self.open() as db:
+                await db.execute(
+                    "UPDATE sessions SET last_user_prompt = ? WHERE id = ?",
+                    (snippet, id),
+                )
+                await db.commit()
+        except aiosqlite.Error:
+            return False
+        return True
+
+    async def session_set_last_reply(self, id: int, reply: str) -> bool:
+        """Persist a truncated copy of the latest agent reply and stamp
+        `turn_ended_at` to mark the turn as completed.
+
+        Atomic so the picker can never see a reply without its turn-end
+        timestamp (or vice versa).
+        """
+        snippet = (reply or "").strip()[:240]
+        now_utc = datetime.now(timezone.utc).isoformat()
+        try:
+            async with self.open() as db:
+                await db.execute(
+                    """
+                    UPDATE sessions
+                       SET last_reply = ?, turn_ended_at = ?
+                     WHERE id = ?
+                    """,
+                    (snippet, now_utc, id),
                 )
                 await db.commit()
         except aiosqlite.Error:

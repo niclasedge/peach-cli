@@ -17,7 +17,24 @@ in the original repository. Only Peach-specific changes are tracked below.
 - Native Windows support via `platformdirs` (state/config/cache resolve to
   `%LOCALAPPDATA%\peach\peach.db` etc.).
 - Startup picker listing recent sessions grouped by project path; Enter
-  resumes, `n` starts a new session.
+  resumes, `n` starts a new session, `d` deletes a session row.
+- Active-session cards above the picker tree showing the latest user
+  prompt (left) and agent reply (right) per session; busy / active /
+  idle state derived from `last_used` and `turn_ended_at`.
+- `last_user_prompt`, `last_reply`, `turn_ended_at` columns on the
+  sessions table for cross-process / cross-device card previews.
+- Auto-resume on bootstrap: when exactly one DB session has
+  `last_used < 60s`, the picker is skipped and that session is
+  resumed directly (Ctrl+H always returns to the picker).
+- Resuming a session that is already loaded as a mode in the current
+  process now switches to that mode instead of spawning a duplicate.
+- Optional sidebar "Project overview" panel that surfaces TaskMD state
+  via the `task` CLI (cc-task) — Termine / In Arbeit / Waiting / Next
+  task lists are pulled from `task info --format json`.
+- LAN-friendly `peach serve`: when bound to `0.0.0.0` / `::`, the public
+  URL is auto-derived from the primary LAN IP so browser-side WebSocket
+  + static URLs resolve from remote devices. `--public-url` still
+  overrides.
 - `project_path` column on the sessions table with backfill migration.
 - Early session persistence: DB row is inserted at session creation, then
   updated with the ACP `agent_session_id` once the handshake completes —

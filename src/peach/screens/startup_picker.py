@@ -27,6 +27,7 @@ from textual.screen import Screen
 
 from peach.db import DB, Session
 from peach.screens.confirm_modal import ConfirmModal
+from peach.widgets.active_session_cards import ActiveSessionCards, filter_active
 from peach.widgets.sessions_list import _fmt_timestamp
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ class StartupPickerScreen(Screen[Any]):
     ]
 
     tree = getters.query_one("#sessions-tree", widgets.Tree)
+    active_cards = getters.query_one("#active-session-cards", ActiveSessionCards)
 
     def __init__(self, cwd: str, db: DB | None = None) -> None:
         super().__init__()
@@ -60,6 +62,7 @@ class StartupPickerScreen(Screen[Any]):
             yield widgets.Static(
                 f"🍑 [b]New Session in[/b] {self.cwd}", id="new-session-row"
             )
+            yield ActiveSessionCards(id="active-session-cards")
             yield widgets.Static("Recent sessions", classes="section-header")
             yield widgets.Tree[Session | str](
                 "Sessions", id="sessions-tree"
@@ -103,6 +106,10 @@ class StartupPickerScreen(Screen[Any]):
         grouped = await self._db.sessions_recent(
             limit=50, group_by_project=True
         )
+        flat: list[Session] = []
+        for sessions in grouped.values():
+            flat.extend(sessions)
+        self.active_cards.sessions = filter_active(flat)
         if not grouped:
             tree.root.add_leaf(EMPTY_MESSAGE)
             return
@@ -192,3 +199,8 @@ class StartupPickerScreen(Screen[Any]):
         if event.node.data is None:
             return
         self.dismiss(event.node.data)
+
+    @on(ActiveSessionCards.Resume)
+    def on_active_card_resume(self, event: ActiveSessionCards.Resume) -> None:
+        event.stop()
+        self.dismiss(event.session)

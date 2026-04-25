@@ -627,13 +627,49 @@ class ToadApp(App, inherit_bindings=False):
         self.anon_id  # Created on frst reference
         if mode := self._initial_mode:
             self.switch_mode(mode)
-        else:
+        elif not await self._try_auto_resume():
             await self._bootstrap_with_startup_picker()
 
         self.update_terminal_title()
         self.set_timer(1, self.run_version_check)
         self.set_process_title()
         self.update_show_sessions()
+
+    async def _try_auto_resume(self) -> bool:
+        """Skip the picker if exactly one DB session has `last_used < 60s`.
+
+        Useful for the cross-device hand-off: if Mac just sent a prompt
+        and the user opens the URL on iPhone, the iPhone web tab jumps
+        straight into that session instead of re-picking it. User can
+        always Ctrl+H back to the picker.
+        """
+        from peach.widgets.active_session_cards import (
+            ACTIVE_THRESHOLD_SECONDS,
+            _seconds_since,
+        )
+
+        db = DB()
+        await db.create()
+        rows = await db.sessions_recent(limit=20)
+        if not isinstance(rows, list):
+            return False
+        recent = [
+            s
+            for s in rows
+            if (a := _seconds_since(s.get("last_used"))) is not None
+            and a < ACTIVE_THRESHOLD_SECONDS
+        ]
+        if len(recent) != 1:
+            return False
+        s = recent[0]
+        project_path_str = s.get("project_path") or ""
+        self.launch_agent(
+            agent_identity=s.get("agent_identity") or "claude.com",
+            agent_session_id=s.get("agent_session_id"),
+            session_pk=s.get("id"),
+            project_path=Path(project_path_str) if project_path_str else None,
+        )
+        return True
 
     async def _bootstrap_with_startup_picker(self) -> None:
         """Show the StartupPickerScreen, then route to new or resume.
@@ -853,6 +889,14 @@ class ToadApp(App, inherit_bindings=False):
         from peach.screens.main import MainScreen
         from peach.agent_schema import Agent
         from peach.agents import read_agents
+
+        # If this DB session is already open as a mode in this process,
+        # just switch to it instead of spawning a duplicate.
+        if session_pk is not None:
+            for details in self._session_tracker.sessions.values():
+                if details.db_id == session_pk:
+                    await self.switch_mode(details.mode_name)
+                    return
 
         agent: Agent | None = None
         session_title = "New Session"
