@@ -94,10 +94,6 @@ can pick up where you left off.
   border when the session is idle. Click or `Enter` on a card to
   resume — if the session is already loaded as a mode in this process,
   Peach switches to it instead of spawning a duplicate.
-- **Auto-resume** — when exactly one session has `last_used < 60s` at
-  startup (typical hand-off case from another device), Peach skips the
-  picker and resumes that session directly. `Ctrl+H` always returns to
-  the picker.
 - **Sidebar panel** — `Ctrl+B` opens the sidebar; the top panel *Sessions*
   lists recent conversations of the current project with a compact timestamp
   (`HH:MM` today, `dd.mm. HH:MM` otherwise). `Enter` on a leaf resumes that

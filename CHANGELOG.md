@@ -23,9 +23,6 @@ in the original repository. Only Peach-specific changes are tracked below.
   idle state derived from `last_used` and `turn_ended_at`.
 - `last_user_prompt`, `last_reply`, `turn_ended_at` columns on the
   sessions table for cross-process / cross-device card previews.
-- Auto-resume on bootstrap: when exactly one DB session has
-  `last_used < 60s`, the picker is skipped and that session is
-  resumed directly (Ctrl+H always returns to the picker).
 - Resuming a session that is already loaded as a mode in the current
   process now switches to that mode instead of spawning a duplicate.
 - Optional sidebar "Project overview" panel that surfaces TaskMD state
