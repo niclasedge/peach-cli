@@ -109,6 +109,7 @@ class StartupPickerScreen(Screen[Any]):
         flat: list[Session] = []
         for sessions in grouped.values():
             flat.extend(sessions)
+        self.active_cards.loaded_db_ids = self._active_db_ids()
         self.active_cards.sessions = filter_active(flat)
         if not grouped:
             tree.root.add_leaf(EMPTY_MESSAGE)

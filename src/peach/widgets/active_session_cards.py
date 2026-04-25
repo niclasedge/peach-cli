@@ -108,7 +108,7 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         background: $boost;
 
         &.-active { border: round $success; }
-        &.-busy { border: round $warning; }
+        &.-loaded { border: round $warning; }
         &:focus, &:focus-within {
             background: $boost-darken-1;
             border: round $primary;
@@ -124,17 +124,18 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
             padding: 0 1 0 1;
         }
         .col-user { border-right: heavy $surface; }
+        .col-label-row { height: 1; }
         .col-label {
             color: $text-secondary;
             text-style: dim italic;
-            height: 1;
+            width: auto;
         }
-        .col-text { color: $text-secondary; height: auto; }
-        .col-prior-label {
+        .col-prior-inline {
             color: $text-secondary;
             text-style: dim italic;
-            height: 1;
+            width: 1fr;
         }
+        .col-text { color: $text-secondary; height: auto; }
         .col-prior-text {
             color: $text-secondary;
             text-style: dim;
@@ -143,15 +144,15 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         .col-busy {
             color: $text-warning;
             text-style: italic;
-            height: auto;
-            margin-top: 1;
+            height: 1;
         }
     }
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, is_loaded: bool = False) -> None:
         super().__init__()
         self.session = session
+        self.is_loaded = is_loaded
 
     def compose(self) -> ComposeResult:
         path = self.session.get("project_path") or ""
@@ -161,10 +162,13 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         is_active = age < ACTIVE_THRESHOLD_SECONDS
         done = _is_turn_done(self.session)
 
-        if done and is_active:
+        # Border priority: loaded (orange) > active (green) > default.
+        # Orange = a tab for this session is open in the current process,
+        # so click jumps right back to it instead of resuming via ACP.
+        if self.is_loaded:
+            self.add_class("-loaded")
+        elif done and is_active:
             self.add_class("-active")
-        elif not done:
-            self.add_class("-busy")
 
         pill_color = "$text-success" if is_active else "$text-secondary"
         pill_glyph = "●" if is_active else "○"
@@ -191,23 +195,27 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
                 yield Static("You", classes="col-label")
                 yield Static(user_prompt or "—", classes="col-text", markup=False)
             with VerticalGroup(classes="col-agent"):
-                yield Static("Agent", classes="col-label")
-                if not done:
-                    if last_reply:
+                if not done and last_reply:
+                    with Horizontal(classes="col-label-row"):
+                        yield Static("Agent", classes="col-label")
                         yield Static(
-                            "↑ reply to previous prompt",
-                            classes="col-prior-label",
+                            " ↑ reply to previous prompt",
+                            classes="col-prior-inline",
                         )
-                        yield Static(
-                            last_reply,
-                            classes="col-prior-text",
-                            markup=False,
-                        )
+                    yield Static(
+                        last_reply, classes="col-prior-text", markup=False
+                    )
                     yield Static(
                         "⏵ replying to new prompt…", classes="col-busy"
                     )
+                elif not done:
+                    yield Static("Agent", classes="col-label")
+                    yield Static("⏵ replying…", classes="col-busy")
                 else:
-                    yield Static(last_reply or "—", classes="col-text", markup=False)
+                    yield Static("Agent", classes="col-label")
+                    yield Static(
+                        last_reply or "—", classes="col-text", markup=False
+                    )
 
     def action_select(self) -> None:
         self.post_message(ActiveSessionCards.Resume(self.session))
@@ -239,6 +247,12 @@ class ActiveSessionCards(VerticalGroup):
             super().__init__()
             self.session = session
 
+    def __init__(self, id: str | None = None) -> None:
+        super().__init__(id=id)
+        # Set externally by the picker before assigning `sessions` so the
+        # resulting recompose can colour the right cards orange.
+        self.loaded_db_ids: set[int] = set()
+
     def watch_sessions(self, new: list[Session]) -> None:
         self.set_class(not new, "-empty")
 
@@ -247,4 +261,7 @@ class ActiveSessionCards(VerticalGroup):
             return
         yield Label("Active sessions", classes="section-header")
         for session in self.sessions:
-            yield ActiveSessionCard(session)
+            yield ActiveSessionCard(
+                session,
+                is_loaded=session.get("id") in self.loaded_db_ids,
+            )
