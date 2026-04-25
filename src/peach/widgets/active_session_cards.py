@@ -66,6 +66,14 @@ def _relative_age(seconds: float) -> str:
     return f"{int(seconds // 3600)}h ago"
 
 
+def _labeled(label: str, text: str) -> Content:
+    """Inline `<label> <text>` Content — saves a row vs a separate label."""
+    return Content.assemble(
+        (f"{label} ", "$text-secondary italic"),
+        text,
+    )
+
+
 def _is_turn_done(session: Session) -> bool:
     """True iff `turn_ended_at` is at-or-after `last_used` (i.e. the agent
     has finished replying to the latest prompt)."""
@@ -106,6 +114,9 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         padding: 0 1;
         margin: 0 0 1 0;
         background: $boost;
+        border-title-align: left;
+        border-title-color: $text;
+        border-title-style: bold;
 
         &.-active { border: round $success; }
         &.-loaded { border: round $warning; }
@@ -113,29 +124,19 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
             background: $boost-darken-1;
             border: round $primary;
         }
-        .header { color: $text-secondary; height: 1; }
-        .body {
-            height: auto;
-            margin-top: 1;
-        }
+        .body { height: auto; }
         .col-user, .col-agent {
             width: 1fr;
             height: auto;
             padding: 0 1 0 1;
         }
         .col-user { border-right: heavy $surface; }
-        .col-label-row { height: 1; }
-        .col-label {
-            color: $text-secondary;
-            text-style: dim italic;
-            width: auto;
-        }
-        .col-prior-inline {
-            color: $text-secondary;
-            text-style: dim italic;
-            width: 1fr;
-        }
         .col-text { color: $text-secondary; height: auto; }
+        .col-prior-header {
+            color: $text-secondary;
+            text-style: dim italic;
+            height: 1;
+        }
         .col-prior-text {
             color: $text-secondary;
             text-style: dim;
@@ -179,34 +180,28 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
         user_prompt = (self.session.get("last_user_prompt") or "").strip()
         last_reply = (self.session.get("last_reply") or "").strip()
 
-        yield Static(
-            Content.from_markup(
-                f"[b]$title[/]  [dim]· $project · [{pill_color}]$glyph $state[/] · $age[/]",
-                title=title,
-                project=project,
-                glyph=pill_glyph,
-                state=state_label,
-                age=_relative_age(age),
-            ),
-            classes="header",
+        # Render header in the card's border-title — saves a content row
+        # while keeping every piece (title / project / state / age) visible.
+        self.border_title = Content.from_markup(
+            f" $title  [dim]· $project · [{pill_color}]$glyph $state[/] · $age[/] ",
+            title=title,
+            project=project,
+            glyph=pill_glyph,
+            state=state_label,
+            age=_relative_age(age),
         )
+
         with Horizontal(classes="body"):
             with VerticalGroup(classes="col-user"):
-                yield Static("You", classes="col-label")
-                yield Static(user_prompt or "—", classes="col-text", markup=False)
+                yield Static(
+                    _labeled("You", user_prompt or "—"), classes="col-text"
+                )
             with VerticalGroup(classes="col-agent"):
                 if not done and last_reply:
-                    # Busy AND a newer user prompt exists → the visible
-                    # reply is the answer to the *previous* turn. Keep
-                    # it on screen but spell that out, plus a "replying
-                    # to new prompt" indicator so the relationship
-                    # between the You / Agent columns is unambiguous.
-                    with Horizontal(classes="col-label-row"):
-                        yield Static("Agent", classes="col-label")
-                        yield Static(
-                            " ↑ reply to previous prompt",
-                            classes="col-prior-inline",
-                        )
+                    yield Static(
+                        "↑ reply to previous prompt",
+                        classes="col-prior-header",
+                    )
                     yield Static(
                         last_reply, classes="col-prior-text", markup=False
                     )
@@ -214,15 +209,11 @@ class ActiveSessionCard(VerticalGroup, can_focus=True):
                         "⏵ replying to new prompt…", classes="col-busy"
                     )
                 elif not done:
-                    # First-turn busy: the upcoming reply is the answer
-                    # to the prompt shown in the You column, so don't
-                    # add any "replying to new prompt" framing — the
-                    # busy state is already visible from the header pill.
-                    yield Static("Agent", classes="col-label")
+                    yield Static("⏵ replying…", classes="col-busy")
                 else:
-                    yield Static("Agent", classes="col-label")
                     yield Static(
-                        last_reply or "—", classes="col-text", markup=False
+                        _labeled("Agent", last_reply or "—"),
+                        classes="col-text",
                     )
 
     def action_select(self) -> None:
